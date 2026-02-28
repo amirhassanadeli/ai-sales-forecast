@@ -1,31 +1,84 @@
+from pathlib import Path
+
 import joblib
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_absolute_error, mean_squared_error
-from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
-df = pd.read_csv('../data/preprocessed/preprocessed.csv')
+# مسیر پایه
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_PATH = BASE_DIR / "data" / "preprocessed" / "preprocessed.csv"
+MODEL_PATH = BASE_DIR / "models"
 
-X = df.drop('Sales', axis=1)
-y = df['Sales']
 
-x_train, x_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
-)
+def load_data():
+    df = pd.read_csv(DATA_PATH)
+    return df
 
-scaler = StandardScaler()
 
-x_train = scaler.fit_transform(x_train)
-x_test = scaler.transform(x_test)
+def time_based_split(df, split_ratio=0.8):
+    """
+    Split data chronologically (important for time series)
+    """
+    df = df.sort_values("Year")
 
-model = LinearRegression()
-model.fit(x_train, y_train)
+    split_index = int(len(df) * split_ratio)
 
-joblib.dump(model, "../models/model.pkl")
+    train = df.iloc[:split_index]
+    test = df.iloc[split_index:]
 
-y_pred = model.predict(x_test)
+    X_train = train.drop("Sales", axis=1)
+    y_train = train["Sales"]
 
-print("MAE: ", mean_absolute_error(y_test, y_pred))
-print("RMSE: ", np.sqrt(mean_squared_error(y_test, y_pred)))
+    X_test = test.drop("Sales", axis=1)
+    y_test = test["Sales"]
+
+    return X_train, X_test, y_train, y_test
+
+
+def build_pipeline():
+    pipeline = Pipeline([
+        ("scaler", StandardScaler()),
+        ("models", LinearRegression())
+    ])
+    return pipeline
+
+
+def evaluate_model(y_test, y_pred):
+    mae = mean_absolute_error(y_test, y_pred)
+    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+    r2 = r2_score(y_test, y_pred)
+
+    print("Model Evaluation 📊")
+    print("-------------------")
+    print(f"MAE  : {mae:.2f}")
+    print(f"RMSE : {rmse:.2f}")
+    print(f"R2   : {r2:.4f}")
+
+
+def save_model(pipeline):
+    MODEL_PATH.mkdir(parents=True, exist_ok=True)
+    joblib.dump(pipeline, MODEL_PATH / "model.pkl")
+
+
+def train():
+    df = load_data()
+
+    X_train, X_test, y_train, y_test = time_based_split(df)
+
+    pipeline = build_pipeline()
+    pipeline.fit(X_train, y_train)
+
+    y_pred = pipeline.predict(X_test)
+
+    evaluate_model(y_test, y_pred)
+    save_model(pipeline)
+
+    print("\nModel saved successfully ✅")
+
+
+if __name__ == "__main__":
+    train()
